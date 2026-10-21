@@ -1,10 +1,12 @@
+
 {
   "name": "samh",
   "version": "1.0.0",
   "description": "منصة سَمْح",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "postinstall": "pip3 install --user yt-dlp"
   },
   "dependencies": {
     "express": "^4.21.2"
