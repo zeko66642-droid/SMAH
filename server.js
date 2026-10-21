@@ -8,7 +8,7 @@ const PORT = process.env.PORT || 3000;
 
 const FFMPEG_PATH = process.env.FFMPEG_PATH || (process.platform === 'win32' ? 'C:\\Users\\pcfor\\Desktop\\ffmpeg-9.0.2-essentials_build\\ffmpeg-9.0.2-essentials_build\\bin\\ffmpeg.exe' : '/usr/bin/ffmpeg');
 const PYTHON_PATH = process.env.PYTHON_PATH || (process.platform === 'win32' ? 'C:\\Users\\pcfor\\AppData\\Local\\Python\\pythoncore-3.15-64\\python.exe' : '/usr/bin/python3');
-';
+
 const fs = require('fs');
 const os = require('os');
 const { spawn } = require('child_process');
