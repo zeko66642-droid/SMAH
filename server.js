@@ -4,7 +4,7 @@ const path = require('path');
 const { execFile } = require('child_process');
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 const FFMPEG_PATH = process.env.FFMPEG_PATH || 'C:\\Users\\pcfor\\Desktop\\ffmpeg-9.0.2-essentials_build\\ffmpeg-9.0.2-essentials_build\\bin\\ffmpeg.exe';
 const PYTHON_PATH = process.env.PYTHON_PATH || 'C:\\Users\\pcfor\\AppData\\Local\\Python\\pythoncore-3.15-64\\python.exe';
 const fs = require('fs');
@@ -188,7 +188,7 @@ const formatSelector = isBest
 });
 
 
-app.listen(PORT, '127.0.0.1', () => {
-  console.log(`منصة سَمْح تعمل على http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`منصة سَمْح تعمل على المنفذ ${PORT}`);
 });
 
