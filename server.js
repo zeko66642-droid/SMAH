@@ -102,21 +102,22 @@ return res.json({
       vcodec: f.vcodec || null,
       acodec: f.acodec || null
     }))
-    .sort((a, b) =>
-      a.height - b.height ||
-      Number(b.has_audio) - Number(a.has_audio) ||
-      (a.ext === 'mp4' ? -1 : 1)
-    ),
-
-  heights: [...new Set(
-    (video.formats || [])
-      .filter(f => f.vcodec && f.vcodec !== 'none' && f.height)
-      .map(f => f.height)
+   
   )].sort((a, b) => b - a)
+        });
+      } catch (parseError) {
+        console.error('JSON parsing error:', parseError.message);
+
+        return res.status(500).json({
+          error: 'وصلت نتيجة غير متوقعة من أداة استخراج الفيديو.'
+        });
+      }
+    }
+  );
 });
 
-
 app.post('/api/download', (req, res) => {
+
   const { url, height } = req.body || {};
 
   const checked = validateVideoUrl(url);
