@@ -82,29 +82,39 @@ app.post('/api/video-info', (req, res) => {
       try {
         const video = JSON.parse(stdout);
 
-        return res.json({
-          success: true,
-          title: video.title || 'فيديو بدون عنوان',
-          thumbnail: video.thumbnail || null,
-          duration: video.duration ?? null,
-          uploader: video.uploader || null,
-          webpage_url: video.webpage_url || videoUrl,
-          heights: [...new Set(
-            (video.formats || [])
-              .filter(f => f.vcodec && f.vcodec !== 'none' && f.height)
-              .map(f => f.height)
-          )].sort((x, y) => y - x)
-        });
-      } catch (parseError) {
-        console.error('JSON parsing error:', parseError.message);
+return res.json({
+  success: true,
+  title: video.title || 'فيديو بدون عنوان',
+  thumbnail: video.thumbnail || null,
+  duration: video.duration ?? null,
+  uploader: video.uploader || null,
+  webpage_url: video.webpage_url || videoUrl,
 
-        return res.status(500).json({
-          error: 'وصلت نتيجة غير متوقعة من أداة استخراج الفيديو.'
-        });
-      }
-    }
-  );
+  formats: (video.formats || [])
+    .filter(f => f.vcodec && f.vcodec !== 'none' && f.height)
+    .map(f => ({
+      format_id: f.format_id,
+      ext: f.ext || null,
+      quality: f.format_note || `${f.height}p`,
+      height: f.height || null,
+      filesize: f.filesize ?? f.filesize_approx ?? null,
+      has_audio: Boolean(f.acodec && f.acodec !== 'none'),
+      vcodec: f.vcodec || null,
+      acodec: f.acodec || null
+    }))
+    .sort((a, b) =>
+      a.height - b.height ||
+      Number(b.has_audio) - Number(a.has_audio) ||
+      (a.ext === 'mp4' ? -1 : 1)
+    ),
+
+  heights: [...new Set(
+    (video.formats || [])
+      .filter(f => f.vcodec && f.vcodec !== 'none' && f.height)
+      .map(f => f.height)
+  )].sort((a, b) => b - a)
 });
+
 
 app.post('/api/download', (req, res) => {
   const { url, height } = req.body || {};
