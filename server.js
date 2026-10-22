@@ -16,6 +16,34 @@ const { spawn } = require('child_process');
 const COOKIES_BROWSER = process.env.COOKIES_BROWSER || ''; // مثال: chrome أو edge أو firefox
 const cookieArgs = COOKIES_BROWSER ? ['--cookies-from-browser', COOKIES_BROWSER] : [];
 
+// yt-dlp يفعّل Deno فقط افتراضيًا، وصورة Docker تحتوي Node
+const jsRuntimeArgs = ['--js-runtimes', 'node'];
+
+// تصنيف سبب الفشل من stderr لإرجاع رسالة مفيدة للمستخدم دون كشف تفاصيل تقنية
+function classifyYtDlpError(stderr = '') {
+  const s = String(stderr);
+  if (/not a bot|--cookies/i.test(s)) {
+    return { code: 'PLATFORM_VERIFICATION', status: 503,
+      message: 'هذه المنصة تطلب تحققًا إضافيًا من الزائر حاليًا، لذلك لا يمكن استخراج هذا الرابط من الخادم. جرّب رابطًا آخر أو أعد المحاولة لاحقًا.' };
+  }
+  if (/private video|login required|members[- ]only|age[- ]restricted|requires? (a )?(login|authentication)/i.test(s)) {
+    return { code: 'LOGIN_REQUIRED', status: 403,
+      message: 'هذا الفيديو خاص أو مقيّد ويتطلب تسجيل دخول، ولا يمكن تنزيله.' };
+  }
+  if (/unsupported url/i.test(s)) {
+    return { code: 'UNSUPPORTED_URL', status: 400, message: 'هذا الرابط غير مدعوم.' };
+  }
+  if (/video unavailable|has been removed|deleted|not available/i.test(s)) {
+    return { code: 'UNAVAILABLE', status: 404, message: 'الفيديو غير متاح أو تم حذفه.' };
+  }
+  if (/unexpected response from webpage|unable to extract|unable to download webpage|http error 4\d\d|rehydration|captcha/i.test(s)) {
+    return { code: 'EXTRACTOR_BLOCKED', status: 502,
+      message: 'تعذّر على الخادم قراءة صفحة الفيديو من هذه المنصة حاليًا (قد تحجب المنصة الطلب أو تكون غيّرت بنيتها). حاول لاحقًا.' };
+  }
+  return { code: 'UNKNOWN', status: 500,
+    message: 'تعذر استخراج معلومات الفيديو. تأكد من الرابط وحاول مرة أخرى.' };
+}
+
 const BLOCKED_HOSTS = ['localhost', '127.0.0.1', '::1', '[::1]', '0.0.0.0'];
 
 function validateVideoUrl(raw) {
@@ -58,6 +86,8 @@ app.post('/api/video-info', (req, res) => {
       '--no-warnings',
       '--skip-download',
       '--no-playlist',
+      '--socket-timeout', '20',
+      ...jsRuntimeArgs,
       ...cookieArgs,
       '--',
       videoUrl
@@ -69,13 +99,20 @@ app.post('/api/video-info', (req, res) => {
     },
     (error, stdout, stderr) => {
       if (error) {
-        console.error('yt-dlp error:', stderr || error.message);
+        if (error.killed) {
+          console.error(`[video-info] timeout host=${new URL(videoUrl).hostname}`);
+          return res.status(504).json({
+            code: 'TIMEOUT',
+            error: 'استغرق استخراج المعلومات وقتاً طويلاً. حاول مرة أخرى.'
+          });
+        }
 
-        return res.status(500).json({
-          error: error.killed
-            ? 'استغرق استخراج المعلومات وقتاً طويلاً. حاول مرة أخرى.'
-            : 'تعذر استخراج معلومات الفيديو. تأكد من الرابط وحاول مرة أخرى.'
-        });
+        const info = classifyYtDlpError(stderr);
+        console.error(
+          `[video-info] code=${info.code} host=${new URL(videoUrl).hostname}\n` +
+          String(stderr || error.message).slice(0, 2000)
+        );
+        return res.status(info.status).json({ code: info.code, error: info.message });
       }
 
    
@@ -161,6 +198,7 @@ const formatSelector = isBest
    '-f', formatSelector,
     '--merge-output-format', 'mp4',
     '-o', outputTemplate,
+    ...jsRuntimeArgs,
     ...cookieArgs,
     '--print', 'after_move:filepath',
     '--',
@@ -196,10 +234,17 @@ const formatSelector = isBest
     const outputFile = stdout.trim().split(/\r?\n/).filter(Boolean).pop();
 
     if (code !== 0 || !outputFile || !fs.existsSync(outputFile)) {
-      console.error('yt-dlp download failed:', stderr);
+      const info = classifyYtDlpError(stderr);
+      console.error(
+        `[download] code=${info.code} exit=${code} host=${new URL(checked.url).hostname}\n` +
+        String(stderr).slice(0, 2000)
+      );
       responded = true;
-      return res.status(500).json({
-        error: 'تعذر تنزيل الفيديو. جرّب «أفضل جودة» أو حدّث yt-dlp، وقد يكون الفيديو خاصاً أو يتطلب تسجيل دخول.'
+      return res.status(info.status).json({
+        code: info.code,
+        error: info.code === 'UNKNOWN'
+          ? 'تعذر تنزيل الفيديو. جرّب «أفضل جودة»، وقد يكون الفيديو خاصاً أو يتطلب تسجيل دخول.'
+          : info.message
       });
     }
 
@@ -214,5 +259,13 @@ const formatSelector = isBest
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`منصة سَمْح تعمل على المنفذ ${PORT}`);
+
+  execFile(PYTHON_PATH, ['-m', 'yt_dlp', '--version'], { timeout: 15000 }, (err, out, errOut) => {
+    if (err) console.error('[yt-dlp] تعذر قراءة الإصدار:', errOut || err.message);
+    else console.log(`[yt-dlp] version=${out.trim()}`);
+  });
+  execFile('node', ['--version'], (err, out) => {
+    if (!err) console.log(`[node] ${out.trim()}`);
+  });
 });
 
