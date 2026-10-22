@@ -1670,7 +1670,9 @@
             body: JSON.stringify({ url: validation.cleanUrl }),
             signal: AbortSignal.timeout(65000)
           });
-          if (localRes.ok) fetchedData = await localRes.json();
+        const responseData = await localRes.json().catch(() => ({}));
+if (!localRes.ok) throw new Error(responseData.error || responseData.message || `خطأ من الخادم: ${localRes.status}`);
+fetchedData = responseData;
         } catch (_) {
           // السيرفر المحلي غير مشغل، الانتقال للمحرك المباشر
         }
