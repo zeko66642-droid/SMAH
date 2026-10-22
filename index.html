@@ -1673,9 +1673,9 @@
         const responseData = await localRes.json().catch(() => ({}));
 if (!localRes.ok) throw new Error(responseData.error || responseData.message || `خطأ من الخادم: ${localRes.status}`);
 fetchedData = responseData;
-        } catch (_) {
-          // السيرفر المحلي غير مشغل، الانتقال للمحرك المباشر
-        }
+    } catch (err) {
+  throw err;
+}
 
      // الاعتماد على الخادم المحلي فقط
 if (!fetchedData) {
