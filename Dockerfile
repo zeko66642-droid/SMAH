@@ -10,7 +10,7 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install
 
-RUN pip3 install --break-system-packages --no-cache-dir yt-dlp
+RUN pip3 install --break-system-packages --no-cache-dir --upgrade yt-dlp
 
 COPY . .
 
