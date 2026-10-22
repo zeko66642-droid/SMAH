@@ -1,4 +1,3 @@
-
 FROM node:22-bookworm-slim
 
 RUN apt-get update \
@@ -10,9 +9,12 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install
 
-RUN pip3 install --break-system-packages --no-cache-dir --upgrade yt-dlp
-
 COPY . .
+
+# التثبيت بعد نسخ الكود حتى لا تُستعاد طبقة قديمة من الكاش عند تغيّر الكود
+# [default] يجلب yt-dlp-ejs المطلوب لـ YouTube
+RUN pip3 install --break-system-packages --no-cache-dir --upgrade "yt-dlp[default]" \
+    && python3 -m yt_dlp --version
 
 ENV NODE_ENV=production
 
