@@ -7,7 +7,7 @@ RUN apt-get update \
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm install
+RUN npm ci --omit=dev
 
 COPY . .
 
@@ -17,5 +17,7 @@ RUN pip3 install --break-system-packages --no-cache-dir --upgrade "yt-dlp[defaul
     && python3 -m yt_dlp --version
 
 ENV NODE_ENV=production
+
+USER node
 
 CMD ["node", "server.js"]

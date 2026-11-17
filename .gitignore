@@ -1,0 +1,10 @@
+node_modules/
+.env
+.env.*
+!.env.example
+cookies.txt
+*cookies*.txt
+*.log
+samh-downloads/
+dist/
+desktop-bin/

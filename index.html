@@ -1799,12 +1799,29 @@ async function triggerActualDownload() {
       throw new Error(message);
     }
 
+    // نسخة التطبيق: الخادم المحلي يحفظ الفيديو مباشرة في مجلد التنزيلات ويرجع JSON
+    if ((response.headers.get('content-type') || '').includes('application/json')) {
+      const saved = await response.json();
+      if (saved && saved.saved) {
+        showStatusBanner(`تم حفظ الفيديو: ${saved.filename}`, 'success');
+        return;
+      }
+    }
+
     const blob = await response.blob();
     const downloadUrl = URL.createObjectURL(blob);
     const link = document.createElement('a');
 
+    // اسم الملف الحقيقي من الخادم إن وُجد
+    let fileName = height === 'best' ? 'samh_video.mp4' : `samh_video_${height}p.mp4`;
+    const disposition = response.headers.get('content-disposition') || '';
+    const encodedName = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+    if (encodedName) {
+      try { fileName = decodeURIComponent(encodedName[1]); } catch (_) {}
+    }
+
     link.href = downloadUrl;
-    link.download = height === 'best' ? 'samh_video.mp4' : `samh_video_${height}p.mp4`;
+    link.download = fileName;
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -1826,7 +1843,11 @@ async function triggerActualDownload() {
     function showStatusBanner(htmlContent, type) {
       const banner = document.getElementById('samh-status-banner');
       banner.className = `status-alert-banner ${type}`;
-      banner.innerHTML = htmlContent;
+      if (type === 'loading') {
+        banner.innerHTML = htmlContent; // نص ثابت من الكود فقط (يحتوي أيقونة التحميل)
+      } else {
+        banner.textContent = htmlContent; // رسائل الخادم والأخطاء تُعرض كنص آمن
+      }
       banner.style.display = 'inline-flex';
     }
 

@@ -2,11 +2,59 @@
   "name": "samh",
   "version": "1.0.0",
   "description": "منصة سَمْح",
-  "main": "server.js",
+  "main": "electron/main.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "desktop": "electron .",
+    "fetch-tools": "node scripts/fetch-tools.js",
+    "dist": "electron-builder --win --x64 --publish never"
   },
   "dependencies": {
-    "express": "^4.21.2"
+    "express": "^4.21.2",
+    "express-rate-limit": "^8.7.3",
+    "helmet": "^8.3.0"
+  },
+  "devDependencies": {
+    "adm-zip": "^0.6.1",
+    "electron": "^45.3.3",
+    "electron-builder": "^26.18.0"
+  },
+  "author": "SAMH",
+  "build": {
+    "appId": "com.samh.downloader",
+    "productName": "SAMH",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron/**",
+      "server.js",
+      "index.html",
+      "assets/**",
+      "build/icon.png",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "desktop-bin",
+        "to": "bin"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "deleteAppDataOnUninstall": false
+    }
   }
 }
