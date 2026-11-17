@@ -21,7 +21,7 @@ const FILES = [
   },
   {
     name: 'ffmpeg.exe',
-    url: 'https://github.com/yt-dlp/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-lgpl.zip',
+    url: 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-lgpl.zip',
     zipEntries: ['ffmpeg.exe', 'ffprobe.exe']
   },
   {
