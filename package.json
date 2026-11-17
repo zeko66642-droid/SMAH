@@ -31,7 +31,6 @@
       "server.js",
       "index.html",
       "assets/**",
-      "build/icon.png",
       "package.json"
     ],
     "extraResources": [
@@ -44,12 +43,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": [
-            "x64"
-          ]
+          "arch": ["x64"]
         }
-      ],
-      "icon": "build/icon.png"
+      ]
     },
     "nsis": {
       "oneClick": true,
