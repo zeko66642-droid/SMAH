@@ -265,8 +265,12 @@ app.post('/api/video-info', DESKTOP ? [] : infoLimiter, async (req, res) => {
           return res.status(504).json({ code: 'TIMEOUT', error: 'استغرق استخراج المعلومات وقتاً طويلاً. حاول مرة أخرى.' });
         }
         const info = classifyYtDlpError(stderr);
+        const lastErr = redact((String(stderr).split(/\r?\n/).filter(l => /error/i.test(l)).pop() || '')).slice(0, 300);
         console.error(`[video-info] code=${info.code} host=${new URL(videoUrl).hostname}\n${redact(stderr || error.message)}`);
-        return res.status(info.status).json({ code: info.code, error: info.message });
+        return res.status(info.status).json({
+          code: info.code,
+          error: info.message + (DESKTOP && lastErr ? `\n(${lastErr})` : '')
+        });
       }
 
       try {
@@ -327,8 +331,24 @@ setInterval(sweepOldJobs, 10 * 60 * 1000).unref();
 
 let activeDownloads = 0;
 
+// تتبّع تقدّم التنزيل (يستخدمه الموقع والتطبيق بنفس الطريقة)
+const jobs = new Map();
+setInterval(() => {
+  const cutoff = Date.now() - 30 * 60 * 1000;
+  for (const [id, j] of jobs) if (j.ts < cutoff) jobs.delete(id);
+}, 5 * 60 * 1000).unref();
+
+app.get('/api/progress/:id', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const j = jobs.get(req.params.id);
+  if (!j) return res.json({ phase: 'unknown' });
+  res.json({ phase: j.phase, percent: Math.round(j.percent), speed: j.speed, eta: j.eta });
+});
+
 app.post('/api/download', DESKTOP ? [] : downloadLimiter, async (req, res) => {
   const { url, height } = req.body || {};
+  const rawJobId = (req.body || {}).jobId;
+  const jobId = typeof rawJobId === 'string' && /^[A-Za-z0-9_-]{8,64}$/.test(rawJobId) ? rawJobId : null;
 
   const checked = await validateVideoUrl(url);
   if (checked.error) return res.status(400).json({ error: checked.error });
@@ -354,6 +374,12 @@ app.post('/api/download', DESKTOP ? [] : downloadLimiter, async (req, res) => {
   const args = [
     ...baseArgs,
     '--no-part',
+    '--newline',
+    '--progress',
+    '--progress-template',
+    'download:SAMHP|%(progress.status)s|%(progress.downloaded_bytes)s|%(progress.total_bytes)s|%(progress.total_bytes_estimate)s|%(progress.speed)s|%(progress.eta)s|%(progress.filename)s',
+    '--concurrent-fragments', '8',   // تنزيل أجزاء الفيديو بالتوازي (أسرع)
+    '--throttled-rate', '100K',      // إذا بُطّئ الاتصال يعيد yt-dlp المحاولة تلقائيًا
     ...(MAX_FILESIZE ? ['--max-filesize', MAX_FILESIZE] : []),
     ...ffmpegArgs,
     '-f', formatSelector,
@@ -365,7 +391,11 @@ app.post('/api/download', DESKTOP ? [] : downloadLimiter, async (req, res) => {
   ];
 
   activeDownloads++;
-  const child = spawn(RUNNER, args, { windowsHide: true });
+  // ترميز UTF-8 حتى لا تتلف مسارات الملفات بأسماء عربية على ويندوز
+  const child = spawn(RUNNER, args, {
+    windowsHide: true,
+    env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' }
+  });
 
   let stdout = '';
   let stderr = '';
@@ -376,8 +406,53 @@ app.post('/api/download', DESKTOP ? [] : downloadLimiter, async (req, res) => {
   // إذا أغلق المستخدم الصفحة أثناء المعالجة نوقف العملية فورًا
   res.on('close', () => { if (!finished) child.kill('SIGKILL'); });
 
-  child.stdout.on('data', chunk => { stdout += chunk.toString(); if (stdout.length > 1e6) stdout = stdout.slice(-1e5); });
-  child.stderr.on('data', chunk => { stderr += chunk.toString(); if (stderr.length > 1e6) stderr = stderr.slice(-1e5); });
+  // حالة التقدّم: الفيديو أولاً (الجزء الأكبر) ثم الصوت، فنوزّع النسبة حتى لا ترجع من 100% إلى 0%
+  const prog = { phase: 'starting', percent: 0, speed: null, eta: null, idx: 0, lastFile: null, ts: Date.now() };
+  if (jobId) {
+    if (jobs.size > 200) jobs.delete(jobs.keys().next().value);
+    jobs.set(jobId, prog);
+  }
+
+  function parseProgress(line) {
+    const [, status, dl, total, est, speed, eta, ...rest] = line.split('|');
+    const file = rest.join('|');
+    if (file !== prog.lastFile) {
+      if (prog.lastFile !== null) prog.idx++;
+      prog.lastFile = file;
+    }
+    const size = Number(total) || Number(est) || 0;
+    const done = Number(dl) || 0;
+    const pct = size > 0 ? Math.min(100, (done / size) * 100) : 0;
+    prog.percent = prog.idx === 0 ? pct * 0.92 : 92 + pct * 0.08;
+    prog.speed = Number(speed) || null;
+    prog.eta = Number(eta) || null;
+    prog.phase = status === 'finished' ? 'finalizing' : 'downloading';
+    prog.ts = Date.now();
+  }
+
+  function makeReader(kind) {
+    let buf = '';
+    const handle = line => {
+      if (line.startsWith('SAMHP|')) return parseProgress(line);
+      if (kind === 'out') stdout += line + '\n'; else stderr += line + '\n';
+      if (stdout.length > 1e6) stdout = stdout.slice(-1e5);
+      if (stderr.length > 1e6) stderr = stderr.slice(-1e5);
+    };
+    return {
+      push(chunk) {
+        buf += chunk.toString('utf8');
+        const parts = buf.split(/\r?\n/);
+        buf = parts.pop();
+        if (buf.length > 1e5) buf = '';
+        parts.forEach(handle);
+      },
+      flush() { if (buf) { handle(buf); buf = ''; } }
+    };
+  }
+  const outReader = makeReader('out');
+  const errReader = makeReader('err');
+  child.stdout.on('data', c => outReader.push(c));
+  child.stderr.on('data', c => errReader.push(c));
 
   child.on('error', error => {
     finished = true;
@@ -392,24 +467,44 @@ app.post('/api/download', DESKTOP ? [] : downloadLimiter, async (req, res) => {
 
   child.on('close', code => {
     finished = true;
+    outReader.flush();
+    errReader.flush();
     clearTimeout(killTimer);
     activeDownloads--;
+    prog.phase = code === 0 ? 'finalizing' : 'failed';
+    if (jobId) setTimeout(() => jobs.delete(jobId), 60000).unref();
     if (responded) return cleanup();
 
-    const outputFile = stdout.trim().split(/\r?\n/).filter(Boolean).pop();
-    const insideJobDir = outputFile && path.resolve(outputFile).startsWith(jobDir + path.sep);
+    let outputFile = stdout.trim().split(/\r?\n/).filter(Boolean).pop();
+    const inJobDir = f => {
+      if (!f) return false;
+      const rel = path.relative(jobDir, path.resolve(f));
+      return Boolean(rel) && !rel.startsWith('..') && !path.isAbsolute(rel);
+    };
 
-    if (code !== 0 || !insideJobDir || !fs.existsSync(outputFile)) {
+    // احتياط: إذا تغيّر شكل المسار المطبوع، نأخذ أكبر ملف داخل مجلد المهمة
+    if (code === 0 && !(inJobDir(outputFile) && fs.existsSync(outputFile))) {
+      try {
+        const files = fs.readdirSync(jobDir)
+          .filter(n => !/\.(part|ytdl|temp)$/i.test(n))
+          .map(n => path.join(jobDir, n))
+          .sort((a, b) => fs.statSync(b).size - fs.statSync(a).size);
+        if (files.length) outputFile = files[0];
+      } catch (_) {}
+    }
+
+    if (code !== 0 || !inJobDir(outputFile) || !fs.existsSync(outputFile)) {
       const info = classifyYtDlpError(stderr);
+      const lastErr = redact((stderr.split(/\r?\n/).filter(l => /error/i.test(l)).pop() || '')).slice(0, 300);
       console.error(`[download] code=${info.code} exit=${code} host=${new URL(checked.url).hostname}\n${redact(stderr)}`);
       responded = true;
       cleanup();
       if (res.headersSent) return;
       return res.status(info.status).json({
         code: info.code,
-        error: info.code === 'UNKNOWN'
+        error: (info.code === 'UNKNOWN'
           ? 'تعذر تنزيل الفيديو. جرّب «أفضل جودة»، وقد يكون الفيديو خاصاً أو يتطلب تسجيل دخول أو أكبر من الحد المسموح.'
-          : info.message
+          : info.message) + (DESKTOP && lastErr ? `\n(${lastErr})` : '')
       });
     }
 

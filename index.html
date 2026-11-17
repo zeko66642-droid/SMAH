@@ -1782,13 +1782,17 @@ async function triggerActualDownload() {
   try {
     if (submitBtn) submitBtn.disabled = true;
 
-    showStatusBanner('جارٍ تجهيز الفيديو ودمج الصوت، انتظر...', 'info');
+    // معرّف للمهمة لنتابع تقدّم التنزيل من الخادم
+    const jobId = 'j' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+    showLoadingBanner('جارٍ تجهيز الفيديو...');
+    startProgressPolling(jobId);
 
     const response = await fetch('/api/download', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: videoUrl, height })
+      body: JSON.stringify({ url: videoUrl, height, jobId })
     });
+    stopProgressPolling();
 
     if (!response.ok) {
       let message = 'تعذر تنزيل الفيديو.';
@@ -1808,6 +1812,7 @@ async function triggerActualDownload() {
       }
     }
 
+    showLoadingBanner('جارٍ إرسال الملف إلى جهازك...');
     const blob = await response.blob();
     const downloadUrl = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -1829,16 +1834,56 @@ async function triggerActualDownload() {
     setTimeout(() => URL.revokeObjectURL(downloadUrl), 60000);
     showStatusBanner('تم تجهيز التنزيل بنجاح.', 'success');
   } catch (error) {
+    stopProgressPolling();
     showStatusBanner(
       error.message || 'حدث خطأ أثناء التنزيل.',
       'error'
     );
   } finally {
+    stopProgressPolling();
     if (submitBtn) submitBtn.disabled = false;
   }
 }
 
+// ===== شريط التقدّم: نفس الشكل في الموقع والتطبيق =====
+let samhProgressTimer = null;
 
+function startProgressPolling(jobId) {
+  stopProgressPolling();
+  samhProgressTimer = setInterval(async () => {
+    try {
+      const r = await fetch('/api/progress/' + encodeURIComponent(jobId), { cache: 'no-store' });
+      if (!r.ok) return;
+      const p = await r.json();
+      if (!samhProgressTimer) return; // أُوقف أثناء الانتظار
+      if (p.phase === 'downloading') {
+        const parts = [`جارٍ التنزيل ${p.percent}%`];
+        if (p.speed) parts.push(`${(p.speed / 1048576).toFixed(1)} م.ب/ث`);
+        if (p.eta) parts.push(`متبقي ${p.eta} ث`);
+        showLoadingBanner(parts.join(' · '));
+      } else if (p.phase === 'finalizing') {
+        showLoadingBanner('جارٍ دمج الصوت والصورة وحفظ الملف...');
+      }
+    } catch (_) { /* نتجاهل أخطاء الاستعلام المؤقتة */ }
+  }, 1500);
+}
+
+function stopProgressPolling() {
+  if (samhProgressTimer) clearInterval(samhProgressTimer);
+  samhProgressTimer = null;
+}
+
+
+
+    // رسالة انتظار موحّدة (أيقونة تحميل + نص آمن) تُستخدم في كل مراحل الانتظار
+    function showLoadingBanner(text) {
+      const banner = document.getElementById('samh-status-banner');
+      banner.className = 'status-alert-banner loading';
+      const spinner = document.createElement('div');
+      spinner.className = 'spinner-disc';
+      banner.replaceChildren(spinner, document.createTextNode(' ' + text));
+      banner.style.display = 'inline-flex';
+    }
 
     function showStatusBanner(htmlContent, type) {
       const banner = document.getElementById('samh-status-banner');

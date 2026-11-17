@@ -2,7 +2,7 @@
   "name": "samh",
   "version": "1.0.0",
   "description": "منصة سَمْح",
-  "main": "electron/main.js",
+  "main": "main.js",
   "scripts": {
     "start": "node server.js",
     "desktop": "electron .",
@@ -27,7 +27,7 @@
       "output": "dist"
     },
     "files": [
-      "electron/**",
+      "main.js",
       "server.js",
       "index.html",
       "assets/**",
@@ -43,7 +43,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ]
     },
