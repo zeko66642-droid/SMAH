@@ -121,7 +121,7 @@ function buildMenu() {
         {
           label: 'فتح مجلد الإعدادات',
           click: () => {
-            if (!fs.existsSync(settingsFile)) fs.writeFileSync(settingsFile, '{\n  "proxy": "",\n  "cookiesBrowser": ""\n}\n');
+            if (!fs.existsSync(settingsFile)) fs.writeFileSync(settingsFile, '{\n  "proxy": "",\n  "cookiesBrowser": "",\n  "geminiApiKey": ""\n}\n');
             shell.showItemInFolder(settingsFile);
           }
         },
