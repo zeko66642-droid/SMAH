@@ -536,6 +536,39 @@ app.post('/api/download', DESKTOP ? [] : downloadLimiter, async (req, res) => {
   });
 });
 
+
+
+/* SAMH AI Gemini endpoint */
+const aiLimiter = rateLimit({ windowMs: 60000, limit: 12, standardHeaders: true, legacyHeaders: false });
+app.post('/api/ai/chat', DESKTOP ? [] : aiLimiter, async (req, res) => {
+  const apiKey = String(process.env.GEMINI_API_KEY || '').trim();
+  if (!apiKey) return res.status(503).json({ error: 'أضف مفتاح Gemini في إعدادات سَمْح أولاً.' });
+  const incoming = Array.isArray(req.body && req.body.messages) ? req.body.messages : [];
+  const contents = incoming.slice(-12).map(item => ({ role: item && item.role === 'model' ? 'model' : 'user', parts: [{ text: String(item && item.text || '').trim().slice(0, 5000) }] })).filter(item => item.parts[0].text);
+  if (!contents.length || contents[contents.length - 1].role !== 'user') return res.status(400).json({ error: 'اكتب رسالتك أولاً.' });
+  try {
+    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+      body: JSON.stringify({ systemInstruction: { parts: [{ text: 'أنت SAMH AI، مساعد سَمْح الذكي. أجب بالعربية الواضحة وبأسلوب ودود ومختصر، وساعد في التقنية والبرمجة واستخدام التطبيق. لا تدّع تنفيذ إجراءات على جهاز المستخدم.' }] }, contents, generationConfig: { temperature: 0.7, maxOutputTokens: 2048 } }),
+      signal: AbortSignal.timeout(60000)
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      console.error('[SAMH AI] Gemini error:', response.status, data && data.error && data.error.message || '');
+      if (response.status === 401 || response.status === 403) return res.status(502).json({ error: 'مفتاح Gemini غير صحيح أو لا يملك صلاحية.' });
+      if (response.status === 429) return res.status(429).json({ error: 'وصلت إلى حد استخدام Gemini مؤقتًا.' });
+      return res.status(502).json({ error: 'تعذر على Gemini معالجة الطلب. تحقق من المفتاح والنموذج.' });
+    }
+    const answer = (data.candidates || []).flatMap(c => c.content && c.content.parts || []).map(p => p.text || '').join('').trim();
+    if (!answer) return res.status(502).json({ error: 'وصل رد فارغ من Gemini.' });
+    return res.json({ success: true, answer });
+  } catch (error) {
+    const timeout = error && error.name === 'TimeoutError';
+    console.error('[SAMH AI] request failed:', error && error.message);
+    return res.status(timeout ? 504 : 502).json({ error: timeout ? 'انتهت مهلة الرد. حاول مجددًا.' : 'تعذر الاتصال بخدمة Gemini.' });
+  }
+});
+
 /* ------------------------------ معالجة الأخطاء ------------------------------ */
 app.use('/api', (req, res) => res.status(404).json({ error: 'غير موجود.' }));
 app.use((err, req, res, next) => {
