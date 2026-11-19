@@ -538,18 +538,48 @@ app.post('/api/download', DESKTOP ? [] : downloadLimiter, async (req, res) => {
 
 
 
-/* SAMH AI Gemini endpoint */
+/* SAMH AI: desktop clients relay to the hosted AI service; web mode can use its own server key. */
 const aiLimiter = rateLimit({ windowMs: 60000, limit: 12, standardHeaders: true, legacyHeaders: false });
 app.post('/api/ai/chat', DESKTOP ? [] : aiLimiter, async (req, res) => {
-  const apiKey = String(process.env.GEMINI_API_KEY || '').trim();
-  if (!apiKey) return res.status(503).json({ error: 'أضف مفتاح Gemini في إعدادات سَمْح أولاً.' });
   const incoming = Array.isArray(req.body && req.body.messages) ? req.body.messages : [];
-  const contents = incoming.slice(-12).map(item => ({ role: item && item.role === 'model' ? 'model' : 'user', parts: [{ text: String(item && item.text || '').trim().slice(0, 5000) }] })).filter(item => item.parts[0].text);
-  if (!contents.length || contents[contents.length - 1].role !== 'user') return res.status(400).json({ error: 'اكتب رسالتك أولاً.' });
+  const messages = incoming.slice(-12).map(item => ({
+    role: item && item.role === 'model' ? 'model' : 'user',
+    text: String(item && item.text || '').trim().slice(0, 5000)
+  })).filter(item => item.text);
+  if (!messages.length || messages[messages.length - 1].role !== 'user') {
+    return res.status(400).json({ error: 'اكتب رسالتك أولاً.' });
+  }
+
+  if (DESKTOP) {
+    const remoteUrl = String(process.env.SAMH_AI_API_URL || '').trim();
+    if (!remoteUrl) return res.status(503).json({ error: 'خدمة SAMH AI غير مضبوطة بعد.' });
+    try {
+      const response = await fetch(remoteUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages }),
+        signal: AbortSignal.timeout(65000)
+      });
+      const data = await response.json().catch(() => ({}));
+      return res.status(response.status).json(data);
+    } catch (error) {
+      console.error('[SAMH AI] relay failed:', error && error.message);
+      return res.status(502).json({ error: 'تعذر الاتصال بخدمة SAMH AI. حاول مجددًا.' });
+    }
+  }
+
+  const apiKey = String(process.env.GEMINI_API_KEY || '').trim();
+  if (!apiKey) return res.status(503).json({ error: 'خدمة الذكاء الاصطناعي غير مهيأة على الخادم.' });
+  const contents = messages.map(item => ({ role: item.role, parts: [{ text: item.text }] }));
   try {
     const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent', {
-      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-      body: JSON.stringify({ systemInstruction: { parts: [{ text: 'أنت SAMH AI، مساعد سَمْح الذكي. أجب بالعربية الواضحة وبأسلوب ودود ومختصر، وساعد في التقنية والبرمجة واستخدام التطبيق. لا تدّع تنفيذ إجراءات على جهاز المستخدم.' }] }, contents, generationConfig: { temperature: 0.7, maxOutputTokens: 2048 } }),
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: 'أنت SAMH AI، مساعد سَمْح الذكي. أجب بالعربية الواضحة وبأسلوب ودود ومختصر، وساعد في التقنية والبرمجة واستخدام التطبيق. لا تدّع تنفيذ إجراءات على جهاز المستخدم.' }] },
+        contents,
+        generationConfig: { temperature: 0.7, maxOutputTokens: 2048 }
+      }),
       signal: AbortSignal.timeout(60000)
     });
     const data = await response.json().catch(() => ({}));
