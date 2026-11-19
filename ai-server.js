@@ -39,7 +39,7 @@ app.post('/api/ai/chat', aiLimiter, async (req, res) => {
 
   const contents = messages.map(item => ({ role: item.role, parts: [{ text: item.text }] }));
   try {
-    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent', {
+    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-4-hydrogen:generateContent', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
       body: JSON.stringify({
