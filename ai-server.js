@@ -9,6 +9,8 @@ const PORT = Number(process.env.PORT) || 10000;
 const apiKey = String(process.env.GEMINI_API_KEY || '').trim();
 
 app.disable('x-powered-by');
+// Render runs behind a reverse proxy; trust its first proxy hop for rate limiting.
+app.set('trust proxy', 1);
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.json({ limit: '20kb' }));
 
@@ -50,7 +52,7 @@ app.post('/api/ai/chat', aiLimiter, async (req, res) => {
 
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      console.error('[SAMH AI] Gemini status:', response.status);
+      console.error('[SAMH AI] Gemini error:', response.status, data && data.error && data.error.message || JSON.stringify(data).slice(0, 1000));
       if (response.status === 429) return res.status(429).json({ error: 'وصلت خدمة الذكاء الاصطناعي إلى حد الاستخدام مؤقتًا.' });
       if (response.status === 401 || response.status === 403) return res.status(502).json({ error: 'تعذر التحقق من إعدادات خدمة الذكاء الاصطناعي.' });
       return res.status(502).json({ error: 'تعذر على Gemini معالجة الطلب. حاول لاحقًا.' });
