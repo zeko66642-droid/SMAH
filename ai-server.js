@@ -45,7 +45,7 @@ app.post('/api/ai/chat', aiLimiter, async (req, res) => {
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: 'أنت SAMH AI، مساعد سَمْح الذكي. أجب بالعربية الواضحة وبأسلوب ودود ومختصر، وساعد في التقنية والبرمجة واستخدام التطبيق. لا تدّع تنفيذ إجراءات على جهاز المستخدم.' }] },
         contents,
-        generationConfig: { temperature: 0.7, maxOutputTokens: 2048 }
+        generationConfig: { thinkingConfig: { thinkingLevel: 'LOW' }, maxOutputTokens: 1024 }
       }),
       signal: AbortSignal.timeout(55000)
     });
@@ -67,8 +67,8 @@ app.post('/api/ai/chat', aiLimiter, async (req, res) => {
     if (!answer) return res.status(502).json({ error: 'وصل رد فارغ من Gemini.' });
     return res.json({ success: true, answer });
   } catch (error) {
-    console.error('[SAMH AI] request failed:', error && error.message);
-    const timeout = error && error.name === 'TimeoutError';
+    console.error('[SAMH AI] request failed:', error && error.name, error && error.message);
+    const timeout = error && (error.name === 'TimeoutError' || error.name === 'AbortError');
     return res.status(timeout ? 504 : 502).json({
       error: timeout ? 'انتهت مهلة الرد. حاول مجددًا.' : 'تعذر الاتصال بخدمة الذكاء الاصطناعي.'
     });
