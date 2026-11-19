@@ -69,7 +69,7 @@ async function createWindow() {
   process.env.DENO_PATH = path.join(binDir, 'deno.exe');
   process.env.DOWNLOAD_DIR = app.getPath('downloads');
   if (settings.proxy) process.env.PROXY_URL = String(settings.proxy);
-  if (settings.geminiApiKey) process.env.GEMINI_API_KEY = String(settings.geminiApiKey).trim();
+  process.env.SAMH_AI_API_URL = 'https://samh-ai.onrender.com/api/ai/chat';
   if (settings.cookiesBrowser) process.env.COOKIES_BROWSER = String(settings.cookiesBrowser);
 
   // server.js يقرأ الإعدادات عند تحميله، فنستدعيه بعد ضبط المتغيرات
@@ -121,7 +121,7 @@ function buildMenu() {
         {
           label: 'فتح مجلد الإعدادات',
           click: () => {
-            if (!fs.existsSync(settingsFile)) fs.writeFileSync(settingsFile, '{\n  "proxy": "",\n  "cookiesBrowser": "",\n  "geminiApiKey": ""\n}\n');
+            if (!fs.existsSync(settingsFile)) fs.writeFileSync(settingsFile, '{\n  "proxy": "",\n  "cookiesBrowser": ""\n}\n');
             shell.showItemInFolder(settingsFile);
           }
         },
